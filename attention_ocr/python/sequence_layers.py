@@ -247,12 +247,15 @@ class SequenceLayerBase(object):
     with tf.variable_scope('LSTM'):
       first_label = self.get_input(prev=None, i=0)
       decoder_inputs = [first_label] + [None] * (self._params.seq_length - 1)
-      lstm_cell = tf.contrib.rnn.LSTMCell(
+      lstm_cell = tf.contrib.rnn.GRUCell(
           self._mparams.num_lstm_units,
-          use_peepholes=False,
-          cell_clip=self._mparams.lstm_state_clip_value,
-          state_is_tuple=True,
-          initializer=orthogonal_initializer)
+          kernel_initializer=orthogonal_initializer)
+      #lstm_cell = tf.contrib.rnn.LSTMCell(
+      #    self._mparams.num_lstm_units,
+      #    use_peepholes=False,
+      #    cell_clip=self._mparams.lstm_state_clip_value,
+      #    state_is_tuple=True,
+      #    initializer=orthogonal_initializer)
       lstm_outputs, _ = self.unroll_cell(
           decoder_inputs=decoder_inputs,
           initial_state=lstm_cell.zero_state(self._batch_size, tf.float32),

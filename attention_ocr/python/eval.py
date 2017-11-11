@@ -63,6 +63,8 @@ def main(_):
       data, endpoints, dataset.charset, is_training=False)
   slim.get_or_create_global_step()
   session_config = tf.ConfigProto(device_count={"GPU": 0})
+  session_config = tf.ConfigProto()
+  session_config.gpu_options.allow_growth = True
   slim.evaluation.evaluation_loop(
       master=FLAGS.master,
       checkpoint_dir=FLAGS.train_log_dir,

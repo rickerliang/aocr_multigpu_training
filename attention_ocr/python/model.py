@@ -303,7 +303,8 @@ class Model(object):
     mask = tf.cast(
         slim.one_hot_encoding(ids, self._params.num_char_classes), tf.bool)
     all_scores = tf.nn.softmax(chars_logit)
-    selected_scores = tf.boolean_mask(all_scores, mask, name='char_scores')
+    with tf.device("/cpu:0"):
+      selected_scores = tf.boolean_mask(all_scores, mask, name='char_scores')
     scores = tf.reshape(selected_scores, shape=(-1, self._params.seq_length))
     return ids, log_prob, scores
 
@@ -400,10 +401,11 @@ class Model(object):
     # which registers the loss in an internal collection and later returns it
     # as part of GetTotalLoss. We need to use total loss because model may have
     # multiple losses including regularization losses.
-    self.sequence_loss_fn(endpoints.chars_logit, data.labels)
+    single_model_loss = self.sequence_loss_fn(endpoints.chars_logit, data.labels)
     total_loss = slim.losses.get_total_loss()
-    tf.summary.scalar('TotalLoss', total_loss)
-    return total_loss
+    #with tf.device("/cpu:0"):
+    #  tf.summary.scalar('TotalLoss', total_loss)
+    return total_loss, single_model_loss
 
   def label_smoothing_regularization(self, chars_labels, weight=0.1):
     """Applies a label smoothing regularization.
@@ -491,6 +493,70 @@ class Model(object):
 
     def sname(label):
       prefix = 'train' if is_training else 'eval'
+      return '%s/%s' % (prefix, label)
+
+    max_outputs = 4
+    # TODO(gorban): uncomment, when tf.summary.text released.
+    # charset_mapper = CharsetMapper(charset)
+    # pr_text = charset_mapper.get_text(
+    #     endpoints.predicted_chars[:max_outputs,:])
+    # tf.summary.text(sname('text/pr'), pr_text)
+    # gt_text = charset_mapper.get_text(data.labels[:max_outputs,:])
+    # tf.summary.text(sname('text/gt'), gt_text)
+    tf.summary.image(sname('image'), data.images, max_outputs=max_outputs)
+
+    if is_training:
+      tf.summary.image(
+          sname('image/orig'), data.images_orig, max_outputs=max_outputs)
+      for var in tf.trainable_variables():
+        tf.summary.histogram(var.op.name, var)
+      return None
+
+    else:
+      names_to_values = {}
+      names_to_updates = {}
+
+      def use_metric(name, value_update_tuple):
+        names_to_values[name] = value_update_tuple[0]
+        names_to_updates[name] = value_update_tuple[1]
+
+      use_metric('CharacterAccuracy',
+                 metrics.char_accuracy(
+                     endpoints.predicted_chars,
+                     data.labels,
+                     streaming=True,
+                     rej_char=self._params.null_code))
+      # Sequence accuracy computed by cutting sequence at the first null char
+      use_metric('SequenceAccuracy',
+                 metrics.sequence_accuracy(
+                     endpoints.predicted_chars,
+                     data.labels,
+                     streaming=True,
+                     rej_char=self._params.null_code))
+
+      for name, value in names_to_values.iteritems():
+        summary_name = 'eval/' + name
+        tf.summary.scalar(summary_name, tf.Print(value, [value], summary_name))
+      return names_to_updates.values()
+      
+      
+  def create_summaries_multigpu(self, data, endpoints, charset, device_num, is_training):
+    """Creates all summaries for the model.
+
+    Args:
+      data: InputEndpoints namedtuple.
+      endpoints: OutputEndpoints namedtuple.
+      charset: A dictionary with mapping between character codes and
+        unicode characters. Use the one provided by a dataset.charset.
+      is_training: If True will create summary prefixes for training job,
+        otherwise - for evaluation.
+
+    Returns:
+      A list of evaluation ops
+    """
+
+    def sname(label):
+      prefix = 'train_{0}'.format(device_num) if is_training else 'eval_{0}'.format(device_num)
       return '%s/%s' % (prefix, label)
 
     max_outputs = 4

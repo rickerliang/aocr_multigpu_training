@@ -15,5 +15,7 @@
 
 import fsns
 import fsns_test
+import han_dataset_1
+import han_dataset_2
 
-__all__ = [fsns, fsns_test]
+__all__ = [fsns, fsns_test, han_dataset_1, han_dataset_2]
